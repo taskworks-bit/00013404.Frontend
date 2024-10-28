@@ -1,9 +1,16 @@
+# Before-Install.ps1
 $ErrorActionPreference = "Stop"
-Import-Module WebAdministration
 
-New-Item -ItemType Directory -Force -Path C:\inetpub\wwwroot\mvcapp
+try {
+    # Create directory if it doesn't exist
+    New-Item -ItemType Directory -Force -Path C:\inetpub\wwwroot\mvcapp -ErrorAction SilentlyContinue
 
-# Remove any old files from the deployment directory
-if (Test-Path C:\inetpub\wwwroot\mvcapp\*) {
-    Remove-Item -Recurse -Force C:\inetpub\wwwroot\mvcapp\*
+    # Remove contents if they exist
+    Get-ChildItem -Path C:\inetpub\wwwroot\mvcapp -Recurse | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+
+    Write-Host "Before-Install.ps1 completed successfully"
+    exit 0
+} catch {
+    Write-Error "Error in Before-Install.ps1: $_"
+    exit 1
 }

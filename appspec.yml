@@ -7,12 +7,9 @@ hooks:
   BeforeInstall:
     - location: Scripts/Before-Install.ps1
       timeout: 300
-  AfterInstall:
-    - location: Scripts/After-Install.ps1
+  ApplicationStop:
+    - location: Scripts/Application-Stop.ps1
       timeout: 300
   ApplicationStart:
     - location: Scripts/Application-Start.ps1
-      timeout: 300
-  ApplicationStop:
-    - location: Scripts/Application-Stop.ps1
       timeout: 300
