@@ -1,10 +1,32 @@
 version: 0.0
 os: windows
 files:
-  - source: app
-    destination: C:\temp\WebApp\Coursework.Frontend
-  
+  - source: app  # Adjusted to deploy from `app` folder if that’s where binaries are
+    destination: C:\inetpub\wwwroot\Coursework.Frontend
+
+permissions:
+  - object: C:\inetpub\wwwroot\Coursework.Frontend
+    pattern: "**/*"
+    type:
+      - file
+
 hooks:
+  ApplicationStop:
+    - location: scripts/StopApp.ps1
+      timeout: 60
+      runas: Administrator
+
   BeforeInstall:
-    - location: .\StageArtifact.ps1
-    - location: .\CreateWebSite.ps1
+    - location: scripts/InstallDependencies.ps1
+      timeout: 300
+      runas: Administrator
+
+  AfterInstall:
+    - location: scripts/SetPermissions.ps1
+      timeout: 300
+      runas: Administrator
+
+  ApplicationStart:
+    - location: scripts/StartApp.ps1
+      timeout: 60
+      runas: Administrator
