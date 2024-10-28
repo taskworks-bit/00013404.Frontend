@@ -1,7 +1,7 @@
 version: 0.0
 os: windows
 files:
-  - source: \
+  - source: app
     destination: C:\temp\WebApp\Coursework.Frontend
   
 hooks:
