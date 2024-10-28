@@ -1,10 +1,13 @@
-# Restart the IIS service
-Stop-Service -Name 'w3svc' -Force
-Start-Service -Name 'w3svc'
-
-# Ensure the app pool and site are running
+$ErrorActionPreference = "Stop"
 Import-Module WebAdministration
 
-# Start the IIS website
-Start-WebAppPool -Name "DefaultAppPool"
-Start-Website -Name "mvcapp"
+# Start IIS services
+Start-Service -Name W3SVC
+
+# Start app pool and website
+if((Get-WebAppPoolState -Name "DefaultAppPool").Value -ne "Started") {
+    Start-WebAppPool -Name "DefaultAppPool"
+}
+if((Get-WebsiteState -Name "mvcapp").Value -ne "Started") {
+    Start-Website -Name "mvcapp"
+}
