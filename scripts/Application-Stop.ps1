@@ -1,28 +1,31 @@
 # Application-Stop.ps1
-$ErrorActionPreference = "Continue"
-
+# Stop IIS site and application pool safely
 try {
-    # Check if IIS is installed before trying to load the module
-    if ((Get-WindowsFeature Web-Server).Installed) {
-        Import-Module WebAdministration
+    Import-Module WebAdministration
+    
+    $siteName = "Default Web Site"
+    $appPoolName = "DefaultAppPool"
+    
+    # Check if the site exists before attempting to stop it
+    if (Test-Path "IIS:\Sites\$siteName") {
+        Write-Output "Stopping IIS Site: $siteName"
+        Stop-Website -Name $siteName
     } else {
-        Write-Host "IIS is not installed yet, skipping stop operations"
-        exit 0
+        Write-Output "Site $siteName not found - might be first deployment"
     }
-
-    # Try to stop IIS service if it exists
-    $iisService = Get-Service -Name W3SVC -ErrorAction SilentlyContinue
-    if ($iisService) {
-        Write-Host "Stopping IIS service..."
-        Stop-Service -Name W3SVC -Force -ErrorAction SilentlyContinue
+    
+    # Check if the app pool exists before attempting to stop it
+    if (Test-Path "IIS:\AppPools\$appPoolName") {
+        Write-Output "Stopping Application Pool: $appPoolName"
+        if ((Get-WebAppPoolState $appPoolName).Value -ne "Stopped") {
+            Stop-WebAppPool -Name $appPoolName
+        }
     } else {
-        Write-Host "IIS service not found, skipping..."
+        Write-Output "AppPool $appPoolName not found - might be first deployment"
     }
-
-    Write-Host "Application-Stop.ps1 completed successfully"
-    exit 0
+    
+    Write-Output "Application Stop script completed successfully"
 } catch {
-    Write-Host "Error in Application-Stop.ps1: $_"
-    # Exit with success anyway since this is just the stop script
-    exit 0
+    Write-Output "Error in Application-Stop.ps1: $_"
+    throw $_
 }

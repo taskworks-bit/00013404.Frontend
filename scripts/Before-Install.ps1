@@ -1,16 +1,18 @@
 # Before-Install.ps1
-$ErrorActionPreference = "Stop"
-
 try {
-    # Create directory if it doesn't exist
-    New-Item -ItemType Directory -Force -Path C:\inetpub\wwwroot\mvcapp -ErrorAction SilentlyContinue
-
-    # Remove contents if they exist
-    Get-ChildItem -Path C:\inetpub\wwwroot\mvcapp -Recurse | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-
-    Write-Host "Before-Install.ps1 completed successfully"
-    exit 0
+    # Ensure the destination directory exists and is empty
+    $deployPath = "C:\inetpub\wwwroot\mvcapp"
+    
+    if (Test-Path $deployPath) {
+        Write-Output "Cleaning existing files from $deployPath"
+        Remove-Item -Path "$deployPath\*" -Recurse -Force
+    } else {
+        Write-Output "Creating directory $deployPath"
+        New-Item -ItemType Directory -Path $deployPath -Force
+    }
+    
+    Write-Output "Before Install script completed successfully"
 } catch {
-    Write-Error "Error in Before-Install.ps1: $_"
-    exit 1
+    Write-Output "Error in Before-Install.ps1: $_"
+    throw $_
 }
