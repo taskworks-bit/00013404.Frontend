@@ -47,7 +47,7 @@ try {
     foreach ($feature in $features) {
         Write-DetailedLog "Installing feature: $feature"
         try {
-            Add-WindowsFeature -Name $feature -ErrorAction SilentlyContinue
+            Install-WindowsFeature -Name $feature -ErrorAction SilentlyContinue
         }
         catch {
             Write-DetailedLog "Warning: Could not install feature $feature : $_"
@@ -57,7 +57,7 @@ try {
     # Install .NET Core Hosting Bundle
     Write-DetailedLog "Downloading .NET Core Hosting Bundle..."
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $hostingBundleDownloadUrl = "https://download.visualstudio.microsoft.com/download/pr/1c068829-6e5c-471f-a7c5-7cae80368c26/0ce2dc53c54534a3845f700ddfbe0ac7/dotnet-hosting-7.0.14-win.exe"
+    $hostingBundleDownloadUrl = "https://dotnet.microsoft.com/download/dotnet/thank-you/runtime-desktop-7.0.14-windows-hosting-bundle-installer"
     $hostingBundleInstaller = "C:\Windows\Temp\dotnet-hosting-bundle.exe"
 
     # Download with retry logic
