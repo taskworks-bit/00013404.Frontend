@@ -1,50 +1,92 @@
-Write-Host "Starting IIS Site..."
+Write-Host "Starting IIS Site configuration..."
 Import-Module WebAdministration
 
-# Remove existing site and app pool if they exist
+# Define variables
 $appPoolName = "Coursework.Frontend"
 $siteName = "Coursework.Frontend"
+$physicalPath = "C:\inetpub\wwwroot\Coursework.Frontend"
 
-if(Test-Path IIS:\Sites\$siteName) {
-    Remove-Website -Name $siteName
+# Function to write detailed logs
+function Write-DetailedLog {
+    param([string]$message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] $message"
+    Add-Content -Path "C:\CodeDeploy\deployment.log" -Value "[$timestamp] $message"
 }
 
-if(Test-Path IIS:\AppPools\$appPoolName) {
-    Remove-WebAppPool -Name $appPoolName
+try {
+    Write-DetailedLog "Checking for existing website and app pool..."
+    
+    # Remove existing site if it exists
+    if (Test-Path IIS:\Sites\$siteName) {
+        Write-DetailedLog "Removing existing website: $siteName"
+        Remove-Website -Name $siteName -ErrorAction Stop
+    }
+
+    # Remove existing app pool if it exists
+    if (Test-Path IIS:\AppPools\$appPoolName) {
+        Write-DetailedLog "Removing existing app pool: $appPoolName"
+        Remove-WebAppPool -Name $appPoolName -ErrorAction Stop
+    }
+
+    # Create new app pool with specific settings
+    Write-DetailedLog "Creating new application pool: $appPoolName"
+    New-WebAppPool -Name $appPoolName -ErrorAction Stop
+    
+    # Configure app pool settings
+    Write-DetailedLog "Configuring application pool settings..."
+    Set-ItemProperty IIS:\AppPools\$appPoolName -name "managedRuntimeVersion" -value "v4.0" -ErrorAction Stop
+    Set-ItemProperty IIS:\AppPools\$appPoolName -name "startMode" -value "AlwaysRunning" -ErrorAction Stop
+    Set-ItemProperty IIS:\AppPools\$appPoolName -name "processModel.identityType" -value "ApplicationPoolIdentity" -ErrorAction Stop
+    
+    # Ensure the physical path exists
+    if (-not (Test-Path $physicalPath)) {
+        Write-DetailedLog "Creating physical path: $physicalPath"
+        New-Item -ItemType Directory -Path $physicalPath -Force -ErrorAction Stop
+    }
+
+    # Create website
+    Write-DetailedLog "Creating website: $siteName"
+    New-Website -Name $siteName `
+                -PhysicalPath $physicalPath `
+                -ApplicationPool $appPoolName `
+                -Port 80 `
+                -Force `
+                -ErrorAction Stop
+
+    # Set permissions
+    Write-DetailedLog "Setting permissions for: $physicalPath"
+    $acl = Get-Acl $physicalPath
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("IIS AppPool\$appPoolName", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $acl.AddAccessRule($rule)
+    Set-Acl $physicalPath $acl -ErrorAction Stop
+
+    # Start the website
+    Write-DetailedLog "Starting website: $siteName"
+    Start-WebSite -Name $siteName -ErrorAction Stop
+
+    # Verify website and app pool status
+    $site = Get-Website -Name $siteName
+    $pool = Get-WebAppPool -Name $appPoolName
+    
+    Write-DetailedLog "Website Status: $($site.State)"
+    Write-DetailedLog "App Pool Status: $($pool.State)"
+    
+    # Create and set permissions for logs directory
+    $logsPath = Join-Path $physicalPath "logs"
+    if (-not (Test-Path $logsPath)) {
+        Write-DetailedLog "Creating logs directory: $logsPath"
+        New-Item -ItemType Directory -Path $logsPath -Force -ErrorAction Stop
+    }
+
+    $acl = Get-Acl $logsPath
+    $acl.AddAccessRule($rule)
+    Set-Acl $logsPath $acl -ErrorAction Stop
+
+    Write-DetailedLog "IIS Site configuration completed successfully."
 }
-
-# Create new app pool
-New-WebAppPool -Name $appPoolName
-Set-ItemProperty IIS:\AppPools\$appPoolName -name "managedRuntimeVersion" -value ""
-Set-ItemProperty IIS:\AppPools\$appPoolName -name "startMode" -value "AlwaysRunning"
-Set-ItemProperty IIS:\AppPools\$appPoolName -name "processModel.identityType" -value "ApplicationPoolIdentity"
-
-# Create website
-New-Website -Name $siteName `
-            -PhysicalPath "C:\inetpub\wwwroot\Coursework.Frontend" `
-            -ApplicationPool $appPoolName `
-            -Port 80 `
-            -Force
-
-# Set permissions
-$path = "C:\inetpub\wwwroot\Coursework.Frontend"
-$acl = Get-Acl $path
-$rule = New-Object System.Security.AccessControl.FileSystemAccessRule("IIS AppPool\$appPoolName", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
-$acl.AddAccessRule($rule)
-Set-Acl $path $acl
-
-# Start the website
-Start-WebSite -Name $siteName
-Write-Host "IIS Site started successfully."
-
-# Create logs directory if it doesn't exist
-$logsPath = "C:\inetpub\wwwroot\Coursework.Frontend\logs"
-if(!(Test-Path $logsPath)) {
-    New-Item -ItemType Directory -Path $logsPath
+catch {
+    Write-DetailedLog "Error occurred during deployment: $_"
+    Write-DetailedLog "Stack Trace: $($_.Exception.StackTrace)"
+    throw
 }
-
-# Set permissions for logs
-$acl = Get-Acl $logsPath
-$rule = New-Object System.Security.AccessControl.FileSystemAccessRule("IIS AppPool\$appPoolName", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
-$acl.AddAccessRule($rule)
-Set-Acl $logsPath $acl
