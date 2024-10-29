@@ -1,14 +1,23 @@
 Write-Host "Starting IIS Site..."
 Import-Module WebAdministration
 
-# Create the website if it doesn't exist
-if(!(Test-Path IIS:\Sites\Coursework.Frontend)) {
-    New-Website -Name "Coursework.Frontend" `
-                -PhysicalPath "C:\inetpub\wwwroot\Coursework.Frontend" `
-                -ApplicationPool "Coursework.Frontend" `
-                -Port 443
+$appPoolName = "Coursework.Frontend"
+if(!(Test-Path IIS:\AppPools\$appPoolName)) {
+    New-WebAppPool -Name $appPoolName
 }
 
-# Start the website
-Start-WebSite -Name "Coursework.Frontend"
+Set-ItemProperty IIS:\AppPools\$appPoolName -name "managedRuntimeVersion" -value ""  # Empty string for No Managed Code
+Set-ItemProperty IIS:\AppPools\$appPoolName -name "startMode" -value "AlwaysRunning"
+Set-ItemProperty IIS:\AppPools\$appPoolName -name "processModel.identityType" -value "ApplicationPoolIdentity"
+
+if(!(Test-Path IIS:\Sites\$appPoolName)) {
+    New-Website -Name $appPoolName `
+                -PhysicalPath "C:\inetpub\wwwroot\Coursework.Frontend" `
+                -ApplicationPool $appPoolName `
+                -Port 80
+}
+
+Set-WebBinding -Name $appPoolName -BindingInformation "*:80:" -PropertyName "Port" -Value 80
+
+Start-WebSite -Name $appPoolName
 Write-Host "IIS Site started successfully."

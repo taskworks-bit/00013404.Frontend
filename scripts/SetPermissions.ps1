@@ -1,24 +1,22 @@
 Write-Host "Setting permissions for application directory..."
 $path = "C:\inetpub\wwwroot\Coursework.Frontend"
 
-# Ensure directory exists
 if(!(Test-Path $path)) {
     New-Item -ItemType Directory -Path $path -Force
 }
 
-# Reset permissions
-icacls $path /reset
-icacls $path /grant "IIS_IUSRS:(OI)(CI)(RX)"
-icacls $path /grant "IUSR:(OI)(CI)(RX)"
-icacls $path /grant "NT SERVICE\TrustedInstaller:(OI)(CI)(F)"
-icacls $path /grant "NT AUTHORITY\SYSTEM:(OI)(CI)(F)"
-icacls $path /grant "BUILTIN\Administrators:(OI)(CI)(F)"
-icacls $path /grant "BUILTIN\Users:(OI)(CI)(RX)"
+$acl = Get-Acl $path
+$acl.SetAccessRuleProtection($false, $true)
 
-# Set permissions for web.config if it exists
-$webConfig = Join-Path $path "web.config"
-if(Test-Path $webConfig) {
-    icacls $webConfig /grant "IIS_IUSRS:(M)"
-}
+$rule = New-Object System.Security.AccessControl.FileSystemAccessRule("IIS_IUSRS", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+$acl.AddAccessRule($rule)
+
+$rule = New-Object System.Security.AccessControl.FileSystemAccessRule("IUSR", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+$acl.AddAccessRule($rule)
+
+$rule = New-Object System.Security.AccessControl.FileSystemAccessRule("IIS AppPool\Coursework.Frontend", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+$acl.AddAccessRule($rule)
+
+Set-Acl $path $acl
 
 Write-Host "Permissions set successfully."
