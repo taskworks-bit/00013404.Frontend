@@ -15,7 +15,12 @@ function Write-DetailedLog {
 }
 
 try {
-    # Install IIS and necessary features if not already installed
+    # Import required modules
+    Write-DetailedLog "Importing required modules..."
+    Import-Module ServerManager -ErrorAction SilentlyContinue
+    Import-Module WebAdministration -ErrorAction SilentlyContinue
+
+    # Install IIS features using Add-WindowsFeature
     Write-DetailedLog "Installing IIS and Management Tools..."
     $features = @(
         "Web-Server",
@@ -41,16 +46,13 @@ try {
 
     foreach ($feature in $features) {
         Write-DetailedLog "Installing feature: $feature"
-        Install-WindowsFeature -Name $feature -ErrorAction SilentlyContinue
+        try {
+            Add-WindowsFeature -Name $feature -ErrorAction SilentlyContinue
+        }
+        catch {
+            Write-DetailedLog "Warning: Could not install feature $feature : $_"
+        }
     }
-
-    # Force reload IIS PowerShell module
-    Write-DetailedLog "Reloading WebAdministration module..."
-    Remove-Module WebAdministration -ErrorAction SilentlyContinue
-    Import-Module WebAdministration -Force
-
-    # Wait for IIS to be ready
-    Start-Sleep -Seconds 10
 
     # Install .NET Core Hosting Bundle
     Write-DetailedLog "Downloading .NET Core Hosting Bundle..."
@@ -104,6 +106,12 @@ try {
     }
     catch {
         Write-DetailedLog "Warning: Could not check Default Web Site status: $_"
+    }
+
+    # Create website directory if it doesn't exist
+    $websitePath = "C:\inetpub\wwwroot\Coursework.Frontend"
+    if (-not (Test-Path $websitePath)) {
+        New-Item -ItemType Directory -Path $websitePath -Force
     }
 
     # Clean up existing app pool and website (with error handling)
