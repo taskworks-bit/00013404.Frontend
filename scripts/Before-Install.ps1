@@ -1,34 +1,60 @@
 Write-Host "Starting installation preparation..."
-Import-Module WebAdministration
+
+# Create log directory first
+$logPath = "C:\CodeDeploy"
+if (-not (Test-Path $logPath)) {
+    New-Item -ItemType Directory -Path $logPath -Force
+}
 
 # Function to write detailed logs
 function Write-DetailedLog {
     param([string]$message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Write-Host "[$timestamp] $message"
-    Add-Content -Path "C:\CodeDeploy\deployment.log" -Value "[$timestamp] $message"
+    Add-Content -Path "C:\CodeDeploy\deployment.log" -Value "[$timestamp] $message" -Force
 }
 
 try {
-    # Stop Default Website if running
-    if((Get-Website -Name 'Default Web Site').State -eq 'Started') {
-        Write-DetailedLog "Stopping Default Web Site..."
-        Stop-Website -Name 'Default Web Site'
+    # Install IIS and necessary features if not already installed
+    Write-DetailedLog "Installing IIS and Management Tools..."
+    $features = @(
+        "Web-Server",
+        "Web-WebServer",
+        "Web-Common-Http",
+        "Web-Default-Doc",
+        "Web-Dir-Browsing",
+        "Web-Http-Errors",
+        "Web-Static-Content",
+        "Web-Health",
+        "Web-Http-Logging",
+        "Web-Performance",
+        "Web-Security",
+        "Web-Filtering",
+        "Web-App-Dev",
+        "Web-Net-Ext45",
+        "Web-Asp-Net45",
+        "Web-ISAPI-Ext",
+        "Web-ISAPI-Filter",
+        "Web-Mgmt-Tools",
+        "Web-Mgmt-Console"
+    )
+
+    foreach ($feature in $features) {
+        Write-DetailedLog "Installing feature: $feature"
+        Install-WindowsFeature -Name $feature -ErrorAction SilentlyContinue
     }
 
-    # Clean up existing app pool and website
-    if(Test-Path IIS:\AppPools\Coursework.Frontend) {
-        Write-DetailedLog "Removing existing app pool..."
-        Remove-WebAppPool -Name "Coursework.Frontend"
-    }
+    # Force reload IIS PowerShell module
+    Write-DetailedLog "Reloading WebAdministration module..."
+    Remove-Module WebAdministration -ErrorAction SilentlyContinue
+    Import-Module WebAdministration -Force
 
-    if(Test-Path IIS:\Sites\Coursework.Frontend) {
-        Write-DetailedLog "Removing existing website..."
-        Remove-Website -Name "Coursework.Frontend"
-    }
+    # Wait for IIS to be ready
+    Start-Sleep -Seconds 10
 
     # Install .NET Core Hosting Bundle
     Write-DetailedLog "Downloading .NET Core Hosting Bundle..."
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $hostingBundleDownloadUrl = "https://download.visualstudio.microsoft.com/download/pr/1c068829-6e5c-471f-a7c5-7cae80368c26/0ce2dc53c54534a3845f700ddfbe0ac7/dotnet-hosting-7.0.14-win.exe"
     $hostingBundleInstaller = "C:\Windows\Temp\dotnet-hosting-bundle.exe"
 
@@ -39,7 +65,6 @@ try {
 
     while (-not $downloadSuccess -and $retryCount -lt $maxRetries) {
         try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri $hostingBundleDownloadUrl -OutFile $hostingBundleInstaller -ErrorAction Stop
             $downloadSuccess = $true
             Write-DetailedLog "Download completed successfully."
@@ -66,22 +91,35 @@ try {
     Write-DetailedLog ".NET Core Hosting Bundle installed successfully."
 
     # Clean up installer
-    Remove-Item $hostingBundleInstaller -Force
-    
-    # Verify installation by checking dotnet command
+    Remove-Item $hostingBundleInstaller -Force -ErrorAction SilentlyContinue
+
+    # Stop Default Website if running (with error handling)
+    Write-DetailedLog "Checking Default Web Site status..."
     try {
-        $dotnetVersion = & dotnet --version
-        Write-DetailedLog "Installed .NET version: $dotnetVersion"
+        $defaultSite = Get-Website -Name 'Default Web Site' -ErrorAction SilentlyContinue
+        if ($defaultSite -and $defaultSite.State -eq 'Started') {
+            Write-DetailedLog "Stopping Default Web Site..."
+            Stop-Website -Name 'Default Web Site' -ErrorAction SilentlyContinue
+        }
     }
     catch {
-        Write-DetailedLog "Warning: Unable to verify dotnet installation: $_"
+        Write-DetailedLog "Warning: Could not check Default Web Site status: $_"
     }
 
-    # Create new app pool with correct settings
-    Write-DetailedLog "Creating new application pool..."
-    New-WebAppPool -Name "Coursework.Frontend"
-    Set-ItemProperty IIS:\AppPools\Coursework.Frontend -name "managedRuntimeVersion" -value "No Managed Code"
-    Set-ItemProperty IIS:\AppPools\Coursework.Frontend -name "startMode" -value "AlwaysRunning"
+    # Clean up existing app pool and website (with error handling)
+    Write-DetailedLog "Cleaning up existing resources..."
+    try {
+        if(Test-Path IIS:\AppPools\Coursework.Frontend) {
+            Remove-WebAppPool -Name "Coursework.Frontend" -ErrorAction SilentlyContinue
+        }
+
+        if(Test-Path IIS:\Sites\Coursework.Frontend) {
+            Remove-Website -Name "Coursework.Frontend" -ErrorAction SilentlyContinue
+        }
+    }
+    catch {
+        Write-DetailedLog "Warning: Error during cleanup: $_"
+    }
 
     # Restart IIS to apply changes
     Write-DetailedLog "Restarting IIS..."
