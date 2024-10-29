@@ -1,7 +1,7 @@
 version: 0.0
 os: windows
 files:
-  - source: app  # Adjusted to deploy from `app` folder if that’s where binaries are
+  - source: app  
     destination: C:\inetpub\wwwroot\Coursework.Frontend
 
 permissions:
@@ -12,12 +12,12 @@ permissions:
 
 hooks:
   ApplicationStop:
-    - location: scripts/StopApp.ps1
+    - location: scripts/Application_stop.ps1
       timeout: 60
       runas: Administrator
 
   BeforeInstall:
-    - location: scripts/InstallDependencies.ps1
+    - location: scripts/Before_install.ps1
       timeout: 300
       runas: Administrator
 
@@ -27,6 +27,6 @@ hooks:
       runas: Administrator
 
   ApplicationStart:
-    - location: scripts/StartApp.ps1
+    - location: scripts/Application_start.ps1
       timeout: 60
       runas: Administrator
