@@ -12,12 +12,12 @@ permissions:
 
 hooks:
   ApplicationStop:
-    - location: scripts/Application_stop.ps1
+    - location: scripts/Application-Stop.ps1
       timeout: 60
       runas: Administrator
 
   BeforeInstall:
-    - location: scripts/Before_install.ps1
+    - location: scripts/Before-Install.ps1
       timeout: 300
       runas: Administrator
 
@@ -27,6 +27,6 @@ hooks:
       runas: Administrator
 
   ApplicationStart:
-    - location: scripts/Application_start.ps1
+    - location: scripts/Application-Start.ps1
       timeout: 60
       runas: Administrator
