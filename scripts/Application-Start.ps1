@@ -6,7 +6,7 @@ if(!(Test-Path IIS:\Sites\Coursework.Frontend)) {
     New-Website -Name "Coursework.Frontend" `
                 -PhysicalPath "C:\inetpub\wwwroot\Coursework.Frontend" `
                 -ApplicationPool "Coursework.Frontend" `
-                -Port 80
+                -Port 443
 }
 
 # Start the website
