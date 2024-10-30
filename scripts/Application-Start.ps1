@@ -17,16 +17,21 @@ function Write-DetailedLog {
 try {
     Write-DetailedLog "Checking for existing website and app pool..."
     
-    # Remove existing site if it exists
     if (Test-Path IIS:\Sites\$siteName) {
         Write-DetailedLog "Removing existing website: $siteName"
         Remove-Website -Name $siteName -ErrorAction Stop
     }
 
-    # Remove existing app pool if it exists
     if (Test-Path IIS:\AppPools\$appPoolName) {
         Write-DetailedLog "Removing existing app pool: $appPoolName"
         Remove-WebAppPool -Name $appPoolName -ErrorAction Stop
+    }
+
+    if (Get-Module -ListAvailable -Name WebAdministration) {
+    Import-Module WebAdministration -ErrorAction Stop
+    } else {
+    Write-Host "WebAdministration module is not available."
+    throw "WebAdministration module not found."
     }
 
     # Create new app pool with specific settings
