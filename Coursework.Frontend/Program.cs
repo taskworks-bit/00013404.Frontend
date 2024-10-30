@@ -3,6 +3,8 @@ using RestSharp;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.UseUrls("http://0.0.0.0:5000");
+
 builder.Services.AddControllersWithViews();
 
 var baseUrl = builder.Configuration["ApiGateway:BaseUrl"];
@@ -10,6 +12,7 @@ builder.Services.AddScoped(sp => new RestClient(baseUrl!));
 builder.Services.AddScoped<ProductService>(); 
 
 var app = builder.Build();
+
 
 if (!app.Environment.IsDevelopment())
 {
