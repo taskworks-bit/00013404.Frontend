@@ -31,7 +31,7 @@ public class ProductService(RestClient client)
         return response.Data;
     }
 
-    public async Task CreateProductAsync(Product product)
+    public async Task CreateProductAsync(ProductViewModel product)
     {
         var request = new RestRequest("products", Method.Post);
         request.AddJsonBody(product);
