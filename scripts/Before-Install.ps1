@@ -54,47 +54,6 @@ try {
         }
     }
 
-    # Install .NET Core Hosting Bundle
-    Write-DetailedLog "Downloading .NET Core Hosting Bundle..."
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $hostingBundleDownloadUrl = "https://dotnet.microsoft.com/download/dotnet/thank-you/runtime-desktop-7.0.14-windows-hosting-bundle-installer"
-    $hostingBundleInstaller = "C:\Windows\Temp\dotnet-hosting-bundle.exe"
-
-    # Download with retry logic
-    $maxRetries = 3
-    $retryCount = 0
-    $downloadSuccess = $false
-
-    while (-not $downloadSuccess -and $retryCount -lt $maxRetries) {
-        try {
-            Invoke-WebRequest -Uri $hostingBundleDownloadUrl -OutFile $hostingBundleInstaller -ErrorAction Stop
-            $downloadSuccess = $true
-            Write-DetailedLog "Download completed successfully."
-        }
-        catch {
-            $retryCount++
-            Write-DetailedLog "Download attempt $retryCount failed: $_"
-            Start-Sleep -Seconds 10
-        }
-    }
-
-    if (-not $downloadSuccess) {
-        throw "Failed to download .NET Core Hosting Bundle after $maxRetries attempts."
-    }
-
-    # Install Hosting Bundle
-    Write-DetailedLog "Installing .NET Core Hosting Bundle..."
-    $process = Start-Process -FilePath $hostingBundleInstaller -ArgumentList '/install', '/quiet', '/norestart' -NoNewWindow -Wait -PassThru
-    
-    if ($process.ExitCode -ne 0) {
-        throw "Hosting Bundle installation failed with exit code: $($process.ExitCode)"
-    }
-
-    Write-DetailedLog ".NET Core Hosting Bundle installed successfully."
-
-    # Clean up installer
-    Remove-Item $hostingBundleInstaller -Force -ErrorAction SilentlyContinue
-
     # Stop Default Website if running (with error handling)
     Write-DetailedLog "Checking Default Web Site status..."
     try {
