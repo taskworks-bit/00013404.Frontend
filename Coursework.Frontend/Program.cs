@@ -3,7 +3,7 @@ using RestSharp;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost.UseUrls("http://172.31.45.240:8080");
+builder.WebHost.UseUrls("http://51.20.51.37:8080");
 
 builder.Services.AddControllersWithViews();
 
