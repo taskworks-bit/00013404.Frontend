@@ -20,109 +20,136 @@ function Write-DetailedLog {
     Add-Content -Path "C:\CodeDeploy\deployment.log" -Value "[$timestamp] $message"
 }
 
-function Test-ModuleLoaded {
-    param ([string]$moduleName)
+function Repair-IISInstallation {
+    Write-DetailedLog "Repairing IIS Installation..."
     
-    Write-DetailedLog "Checking if module $moduleName is loaded..."
-    if (-not (Get-Module -Name $moduleName)) {
-        Write-DetailedLog "Module $moduleName is not loaded. Attempting to import..."
-        try {
-            Import-Module $moduleName -Force -ErrorAction Stop
-            Write-DetailedLog "Successfully imported $moduleName module"
-            return $true
-        } catch {
-            Write-DetailedLog "Failed to import $moduleName module: $_"
-            return $false
+    try {
+        # Reset IIS
+        Write-DetailedLog "Stopping IIS services..."
+        Stop-Service -Name W3SVC -Force -ErrorAction SilentlyContinue
+        Stop-Service -Name WAS -Force -ErrorAction SilentlyContinue
+        
+        # Register IIS PowerShell Assembly
+        Write-DetailedLog "Registering Microsoft.Web.Administration..."
+        $env:systemroot = [Environment]::GetEnvironmentVariable("SystemRoot")
+        $assembly = Join-Path $env:systemroot "System32\inetsrv\Microsoft.Web.Administration.dll"
+        if (Test-Path $assembly) {
+            & regsvr32 /s $assembly
+        }
+        
+        # Re-register IIS components
+        Write-DetailedLog "Re-registering IIS components..."
+        Start-Process "dism.exe" -ArgumentList "/online /enable-feature /featurename:IIS-WebServerRole /all" -Wait -NoNewWindow
+        Start-Process "dism.exe" -ArgumentList "/online /enable-feature /featurename:IIS-WebServerManagementTools /all" -Wait -NoNewWindow
+        Start-Process "dism.exe" -ArgumentList "/online /enable-feature /featurename:IIS-ManagementScriptingTools /all" -Wait -NoNewWindow
+        
+        # Restart IIS services
+        Write-DetailedLog "Starting IIS services..."
+        Start-Service -Name WAS
+        Start-Service -Name W3SVC
+        
+        # Reset IIS
+        Write-DetailedLog "Resetting IIS..."
+        & iisreset /restart
+        
+        return $true
+    }
+    catch {
+        Write-DetailedLog "Error repairing IIS: $_"
+        return $false
+    }
+}
+
+function Test-IISComponents {
+    Write-DetailedLog "Testing IIS components..."
+    
+    $requiredFeatures = @(
+        "IIS-WebServerRole",
+        "IIS-WebServer",
+        "IIS-CommonHttpFeatures",
+        "IIS-ManagementConsole",
+        "IIS-ManagementScriptingTools"
+    )
+    
+    foreach ($feature in $requiredFeatures) {
+        $featureState = Get-WindowsOptionalFeature -Online -FeatureName $feature
+        if ($featureState.State -ne "Enabled") {
+            Write-DetailedLog "Installing missing IIS feature: $feature"
+            Enable-WindowsOptionalFeature -Online -FeatureName $feature -All -NoRestart
         }
     }
-    return $true
 }
 
 try {
     Write-DetailedLog "Starting deployment process..."
     
-    # Check IIS Service
-    $iisService = Get-Service -Name W3SVC -ErrorAction Stop
-    Write-DetailedLog "IIS Service Status: $($iisService.Status)"
+    # Verify and repair IIS installation
+    Test-IISComponents
     
-    if ($iisService.Status -ne 'Running') {
-        Write-DetailedLog "Starting IIS Service..."
-        Start-Service -Name W3SVC -ErrorAction Stop
-        Start-Sleep -Seconds 5
-    }
-
-    # Ensure WebAdministration module is loaded
-    if (-not (Test-ModuleLoaded -moduleName "WebAdministration")) {
-        throw "Failed to load WebAdministration module"
-    }
-
-    # Alternative way to check and remove website
-    Write-DetailedLog "Checking existing website..."
-    if (Test-Path "IIS:\Sites\$siteName") {
-        Write-DetailedLog "Found existing website. Stopping and removing..."
-        Stop-Website -Name $siteName -ErrorAction SilentlyContinue
-        Remove-Website -Name $siteName -ErrorAction Stop
-    }
-
-    # Alternative way to check and remove app pool
-    Write-DetailedLog "Checking existing app pool..."
-    if (Test-Path "IIS:\AppPools\$appPoolName") {
-        Write-DetailedLog "Found existing app pool. Stopping and removing..."
-        $pool = Get-Item "IIS:\AppPools\$appPoolName"
-        if ($pool.State -eq "Started") {
-            $pool.Stop()
+    # Check if IIS provider is available
+    if (-not (Get-PSProvider -PSProvider WebAdministration -ErrorAction SilentlyContinue)) {
+        Write-DetailedLog "WebAdministration provider not found. Attempting repair..."
+        if (-not (Repair-IISInstallation)) {
+            throw "Failed to repair IIS installation"
         }
-        Remove-Item "IIS:\AppPools\$appPoolName" -Force -Recurse
     }
-
-    # Ensure physical path exists
-    if (-not (Test-Path $physicalPath)) {
-        Write-DetailedLog "Creating physical path: $physicalPath"
-        New-Item -ItemType Directory -Path $physicalPath -Force -ErrorAction Stop
-    }
-
-    # Create new app pool using alternative method
-    Write-DetailedLog "Creating new application pool: $appPoolName"
-    $newPool = New-WebAppPool -Name $appPoolName -ErrorAction Stop
     
-    # Configure app pool using direct path
-    Set-ItemProperty "IIS:\AppPools\$appPoolName" -name "managedRuntimeVersion" -value "v4.0"
-    Set-ItemProperty "IIS:\AppPools\$appPoolName" -name "startMode" -value "AlwaysRunning"
-    Set-ItemProperty "IIS:\AppPools\$appPoolName" -name "processModel.identityType" -value "ApplicationPoolIdentity"
-    Write-DetailedLog "App pool configured successfully"
-
+    # Import WebAdministration module with retry
+    $maxRetries = 3
+    $retryCount = 0
+    $moduleLoaded = $false
+    
+    while (-not $moduleLoaded -and $retryCount -lt $maxRetries) {
+        try {
+            Remove-Module WebAdministration -ErrorAction SilentlyContinue
+            Import-Module WebAdministration -Force
+            $moduleLoaded = $true
+            Write-DetailedLog "Successfully loaded WebAdministration module"
+        }
+        catch {
+            $retryCount++
+            Write-DetailedLog "Attempt $retryCount to load WebAdministration module failed. Retrying..."
+            Start-Sleep -Seconds 5
+        }
+    }
+    
+    if (-not $moduleLoaded) {
+        throw "Failed to load WebAdministration module after $maxRetries attempts"
+    }
+    
+    # Create website using direct AppCmd calls if PowerShell commands fail
+    Write-DetailedLog "Creating application pool and website using AppCmd..."
+    $appcmd = "$env:SystemRoot\System32\inetsrv\appcmd.exe"
+    
+    # Delete existing app pool and site
+    & $appcmd delete apppool "$appPoolName" 2>&1 | Out-Null
+    & $appcmd delete site "$siteName" 2>&1 | Out-Null
+    
+    # Create new app pool
+    & $appcmd add apppool /name:"$appPoolName" /managedRuntimeVersion:"v4.0" /managedPipelineMode:"Integrated"
+    & $appcmd set apppool "$appPoolName" /autoStart:true
+    
     # Create website
-    Write-DetailedLog "Creating website: $siteName"
-    $newSite = New-Website -Name $siteName `
-                          -PhysicalPath $physicalPath `
-                          -ApplicationPool $appPoolName `
-                          -Port 8080 `
-                          -Force `
-                          -ErrorAction Stop
+    & $appcmd add site /name:"$siteName" /physicalPath:"$physicalPath" /bindings:http/*:8080:
+    & $appcmd set site "$siteName" /applicationDefaults.applicationPool:"$appPoolName"
     
     # Set permissions
     Write-DetailedLog "Setting permissions for: $physicalPath"
+    if (-not (Test-Path $physicalPath)) {
+        New-Item -ItemType Directory -Path $physicalPath -Force
+    }
     $acl = Get-Acl $physicalPath
     $identity = "IIS AppPool\$appPoolName"
     $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
     $acl.AddAccessRule($rule)
-    Set-Acl $physicalPath $acl -ErrorAction Stop
-
-    # Start the website
-    Write-DetailedLog "Starting website: $siteName"
-    Start-Website -Name $siteName -ErrorAction Stop
-    Start-Sleep -Seconds 2
-
-    # Final verification using alternative methods
-    Write-DetailedLog "Final Status:"
-    $site = Get-Item "IIS:\Sites\$siteName"
-    $pool = Get-Item "IIS:\AppPools\$appPoolName"
+    Set-Acl $physicalPath $acl
     
-    Write-DetailedLog "Website State: $($site.State)"
-    Write-DetailedLog "App Pool State: $($pool.State)"
-
+    # Start the website
+    & $appcmd start site "$siteName"
+    
     Write-DetailedLog "IIS Site configuration completed successfully."
-} catch {
+}
+catch {
     Write-DetailedLog "Critical error occurred during deployment: $_"
     throw
 }
