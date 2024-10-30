@@ -130,7 +130,7 @@ try {
     & $appcmd set apppool "$appPoolName" /autoStart:true
     
     # Create website
-    & $appcmd add site /name:"$siteName" /physicalPath:"$physicalPath" /bindings:http/51.20.51.37:8080:
+    & $appcmd add site /name:"$siteName" /physicalPath:"$physicalPath" /bindings:http/*:8080:
     & $appcmd set site "$siteName" /applicationDefaults.applicationPool:"$appPoolName"
     
     # Set permissions
