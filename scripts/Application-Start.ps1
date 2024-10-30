@@ -1,15 +1,13 @@
-# Enable verbose logging
+# Enable detailed logging and strict error handling
 $VerbosePreference = "Continue"
 $ErrorActionPreference = "Stop"
 
 Write-Host "Starting IIS Site configuration..."
 
-# Define variables
 $appPoolName = "Coursework.Frontend"
 $siteName = "Coursework.Frontend"
 $physicalPath = "C:\inetpub\wwwroot\Coursework.Frontend"
 
-# Function to write detailed logs
 function Write-DetailedLog {
     param([string]$message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -22,10 +20,28 @@ function Write-DetailedLog {
     Add-Content -Path "C:\CodeDeploy\deployment.log" -Value "[$timestamp] $message"
 }
 
+function Test-ModuleLoaded {
+    param ([string]$moduleName)
+    
+    Write-DetailedLog "Checking if module $moduleName is loaded..."
+    if (-not (Get-Module -Name $moduleName)) {
+        Write-DetailedLog "Module $moduleName is not loaded. Attempting to import..."
+        try {
+            Import-Module $moduleName -Force -ErrorAction Stop
+            Write-DetailedLog "Successfully imported $moduleName module"
+            return $true
+        } catch {
+            Write-DetailedLog "Failed to import $moduleName module: $_"
+            return $false
+        }
+    }
+    return $true
+}
+
 try {
     Write-DetailedLog "Starting deployment process..."
     
-    # Verify IIS Service
+    # Check IIS Service
     $iisService = Get-Service -Name W3SVC -ErrorAction Stop
     Write-DetailedLog "IIS Service Status: $($iisService.Status)"
     
@@ -34,48 +50,29 @@ try {
         Start-Service -Name W3SVC -ErrorAction Stop
         Start-Sleep -Seconds 5
     }
-    
-    # Import WebAdministration module
-    Write-DetailedLog "Importing WebAdministration module..."
-    Remove-Module WebAdministration -ErrorAction SilentlyContinue
-    Import-Module WebAdministration -Force -ErrorAction Stop
-    
-    # Verify module is loaded
-    $module = Get-Module WebAdministration
-    Write-DetailedLog "WebAdministration Module Version: $($module.Version)"
-    
-    # List existing app pools for verification
-    Write-DetailedLog "Current App Pools:"
-    Get-ChildItem IIS:\AppPools | ForEach-Object { Write-DetailedLog "- $($_.Name)" }
 
-    # Check and remove existing website
-    try {
-        $existingSite = Get-Website -Name $siteName -ErrorAction SilentlyContinue
-        if ($existingSite) {
-            Write-DetailedLog "Found existing website. Stopping and removing..."
-            if ($existingSite.State -eq 'Started') {
-                Stop-Website -Name $siteName -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 2
-            }
-            Remove-Website -Name $siteName -ErrorAction Stop
-        }
-    } catch {
-        Write-DetailedLog "Warning during website removal: $_"
+    # Ensure WebAdministration module is loaded
+    if (-not (Test-ModuleLoaded -moduleName "WebAdministration")) {
+        throw "Failed to load WebAdministration module"
     }
 
-    # Check and remove existing app pool
-    try {
-        $existingPool = Get-ChildItem IIS:\AppPools | Where-Object { $_.Name -eq $appPoolName }
-        if ($existingPool) {
-            Write-DetailedLog "Found existing app pool. Stopping and removing..."
-            if ($existingPool.State -eq 'Started') {
-                Stop-WebAppPool -Name $appPoolName -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 2
-            }
-            Remove-WebAppPool -Name $appPoolName -ErrorAction Stop
+    # Alternative way to check and remove website
+    Write-DetailedLog "Checking existing website..."
+    if (Test-Path "IIS:\Sites\$siteName") {
+        Write-DetailedLog "Found existing website. Stopping and removing..."
+        Stop-Website -Name $siteName -ErrorAction SilentlyContinue
+        Remove-Website -Name $siteName -ErrorAction Stop
+    }
+
+    # Alternative way to check and remove app pool
+    Write-DetailedLog "Checking existing app pool..."
+    if (Test-Path "IIS:\AppPools\$appPoolName") {
+        Write-DetailedLog "Found existing app pool. Stopping and removing..."
+        $pool = Get-Item "IIS:\AppPools\$appPoolName"
+        if ($pool.State -eq "Started") {
+            $pool.Stop()
         }
-    } catch {
-        Write-DetailedLog "Warning during app pool removal: $_"
+        Remove-Item "IIS:\AppPools\$appPoolName" -Force -Recurse
     }
 
     # Ensure physical path exists
@@ -84,35 +81,25 @@ try {
         New-Item -ItemType Directory -Path $physicalPath -Force -ErrorAction Stop
     }
 
-    # Create new app pool
+    # Create new app pool using alternative method
     Write-DetailedLog "Creating new application pool: $appPoolName"
     $newPool = New-WebAppPool -Name $appPoolName -ErrorAction Stop
-    Start-Sleep -Seconds 2
     
-    # Configure app pool
-    Write-DetailedLog "Configuring application pool settings..."
-    $pool = Get-ChildItem IIS:\AppPools | Where-Object { $_.Name -eq $appPoolName }
-    
-    if ($pool) {
-        Set-ItemProperty IIS:\AppPools\$appPoolName -name "managedRuntimeVersion" -value "v4.0"
-        Set-ItemProperty IIS:\AppPools\$appPoolName -name "startMode" -value "AlwaysRunning"
-        Set-ItemProperty IIS:\AppPools\$appPoolName -name "processModel.identityType" -value "ApplicationPoolIdentity"
-        Write-DetailedLog "App pool configured successfully"
-    } else {
-        throw "App pool was not created successfully"
-    }
+    # Configure app pool using direct path
+    Set-ItemProperty "IIS:\AppPools\$appPoolName" -name "managedRuntimeVersion" -value "v4.0"
+    Set-ItemProperty "IIS:\AppPools\$appPoolName" -name "startMode" -value "AlwaysRunning"
+    Set-ItemProperty "IIS:\AppPools\$appPoolName" -name "processModel.identityType" -value "ApplicationPoolIdentity"
+    Write-DetailedLog "App pool configured successfully"
 
     # Create website
     Write-DetailedLog "Creating website: $siteName"
     $newSite = New-Website -Name $siteName `
                           -PhysicalPath $physicalPath `
                           -ApplicationPool $appPoolName `
-                          -Port 80 `
+                          -Port 8080 `
                           -Force `
                           -ErrorAction Stop
     
-    Start-Sleep -Seconds 2
-
     # Set permissions
     Write-DetailedLog "Setting permissions for: $physicalPath"
     $acl = Get-Acl $physicalPath
@@ -121,36 +108,21 @@ try {
     $acl.AddAccessRule($rule)
     Set-Acl $physicalPath $acl -ErrorAction Stop
 
-    # Verify website creation
-    $site = Get-Website -Name $siteName
-    if (-not $site) {
-        throw "Website was not created successfully"
-    }
-
     # Start the website
     Write-DetailedLog "Starting website: $siteName"
     Start-Website -Name $siteName -ErrorAction Stop
     Start-Sleep -Seconds 2
 
-    # Final verification
-    $site = Get-Website -Name $siteName
-    $pool = Get-WebAppPool -Name $appPoolName
-    
+    # Final verification using alternative methods
     Write-DetailedLog "Final Status:"
+    $site = Get-Item "IIS:\Sites\$siteName"
+    $pool = Get-Item "IIS:\AppPools\$appPoolName"
+    
     Write-DetailedLog "Website State: $($site.State)"
     Write-DetailedLog "App Pool State: $($pool.State)"
-    
-    # Verify site is actually responding
-    try {
-        $response = Invoke-WebRequest -Uri "http://localhost" -UseBasicParsing -ErrorAction Stop
-        Write-DetailedLog "Website is responding with status code: $($response.StatusCode)"
-    } catch {
-        Write-DetailedLog "Warning: Could not verify website response: $_"
-    }
 
     Write-DetailedLog "IIS Site configuration completed successfully."
 } catch {
     Write-DetailedLog "Critical error occurred during deployment: $_"
-    Write-DetailedLog "Stack Trace: $($_.Exception.StackTrace)"
     throw
 }
